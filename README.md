@@ -29,10 +29,10 @@ This workflow generates an annotated de novo VCF using trio variant calls. It us
 ## download GRCh38.105 database
 wget https://snpeff.blob.core.windows.net/databases/v5_1/snpEff_v5_1_GRCh38.105.zip
 ## Run with miniwdl
-miniwdl run --as-me -i test.inputs.json workflow.wdl
+miniwdl run --as-me -i test.inputs.json wdl/workflow.wdl
 ```
 
 ## Test with Toil
 ```sh
-toil-wdl-runner workflow.wdl --inputs test.inputs.json
+toil-wdl-runner wdl/workflow.wdl --inputs test.inputs.json
 ```
