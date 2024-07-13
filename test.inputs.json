@@ -1,0 +1,22 @@
+{
+    "denovo_snps.FAMILY": "test_sample", 
+    "denovo_snps.SEX": "Female", 
+    "denovo_snps.CHILD_VCF": "test/child_chr1_10000_60000.vcf.gz", 
+    "denovo_snps.FATHER_VCF": "test/father_chr1_10000_60000.vcf.gz", 
+    "denovo_snps.MOTHER_VCF": "test/mother_chr1_10000_60000.vcf.gz", 
+    "denovo_snps.MOTHER_BAM": "test/mother_bam.bam", 
+    "denovo_snps.MOTHER_BAM_INDEX": "test/mother_bam.bam", 
+    "denovo_snps.FATHER_BAM": "test/mother_bam.bam", 
+    "denovo_snps.FATHER_BAM_INDEX": "test/mother_bam.bam", 
+    "denovo_snps.REF": "test/test_hg38.fasta", 
+    "denovo_snps.LOW_COMPLEXITY_BED": "test/test.low_complexity.bed.gz", 
+    "denovo_snps.SNPEFF_DB": "test/snpEff_v5_1_GRCh38.105.zip", 
+    "denovo_snps.SNPEFF_DB_NAME": "GRCh38.105", 
+    "denovo_snps.CLINVAR_VCF": "test/test.clinvar.vcf.gz", 
+    "denovo_snps.CLINVAR_VCF_INDEX": "test/test.clinvar.vcf.gz.tbi", 
+    "denovo_snps.DBNSFP_DB": "test/test.dbNSFP4.4a.small.txt.gz", 
+    "denovo_snps.DBNSFP_DB_INDEX": "test/test.dbNSFP4.4a.small.txt.gz.tbi", 
+    "denovo_snps.GNOMAD_VCF": "test/test.gnomadv4.vcf.gz", 
+    "denovo_snps.GNOMAD_VCF_INDEX": "test/test.gnomadv4.vcf.gz.tbi", 
+    "denovo_snps.KEEP_RARE": false
+}
