@@ -4,7 +4,7 @@ workflow vcfeval_denovos_wf {
     meta {
 	    author: "Shloka Negi"
         email: "shnegi@ucsc.edu"
-        description: "Pipeline built over vcfeval with custom-filtering to generate annotated denovo candidates in a trio"
+        description: "Generates an annotated de novo VCF using trio variant calls. It uses pairwise vcfeval, along with custom-filtering to generate annotated denovo candidates."
     }
 
     parameter_meta {
@@ -18,7 +18,6 @@ workflow vcfeval_denovos_wf {
         MOTHER_BAM: "Sorted and indexed mother's BAM with the long reads. Optional. If present, denovos will be re-evaluated with read support. Helps filtering false-positives out"
         MOTHER_BAM_INDEX: "Index for mother's BAM"
         REF: "Reference genome fasta"
-        LOW_COMPLEXITY_BED: "GIAB low-complexity regions in GRCh38"
         SNPEFF_DB: "SNPeff annotation bundle (zip file)"
         SNPEFF_DB_NAME: "Name of SNPeff annotation bundle. E.g. GRCh38.105"
         CLINVAR_VCF: "VCF with all variants in ClinVar and their clinical significance (CLNSIG INFO field). Must be sorted, bgzipped, and indexed."
@@ -27,7 +26,7 @@ workflow vcfeval_denovos_wf {
         DBNSFP_DB_INDEX: "Index for DBNSFP_DB"
         GNOMAD_VCF: "VCF with all variants in gnomAD and their allele frequency (AF INFO field). Must be sorted, bgzipped, and indexed."
         GNOMAD_VCF_INDEX: "Index for GNOMAD_VCF (.tbi file)."
-        KEEP_RARE: " Filter common variants in gnomad (AF>=0.001)?? (Default : true)"
+        KEEP_RARE: " Filter common variants in gnomad (AF>=0.001) ?? (Default : true)"
     }
 
     input {
@@ -41,7 +40,6 @@ workflow vcfeval_denovos_wf {
         File? MOTHER_BAM
         File? MOTHER_BAM_INDEX
         File REF
-        File? LOW_COMPLEXITY_BED
         File? SNPEFF_DB
         String? SNPEFF_DB_NAME
         File? CLINVAR_VCF
@@ -65,41 +63,27 @@ workflow vcfeval_denovos_wf {
     }
 
     File denovos_vcf = run_vcfeval.vcf
-
-    ## Restrict to denovos outside low-complexity regions.
-    if(defined(LOW_COMPLEXITY_BED)) {
-        call subset_denovos_by_region {
-            input:
-            input_vcf=denovos_vcf,
-            lc_bed=select_first([LOW_COMPLEXITY_BED])
-        }
-    }
-
-    File denovos_subset_vcf = select_first([subset_denovos_by_region.vcf, denovos_vcf])
     
     ## Effective denovo variant filtering using parent's VCFs to remove possible false-positives
     call run_filtering {
         input:
-        input_vcf=denovos_subset_vcf,
+        input_vcf=denovos_vcf,
         mother_vcf=MOTHER_VCF,
         father_vcf=FATHER_VCF,
         sex=SEX
     }
-
-    # File denovos_filtered_vcf = run_filtering.vcf
-    File denovos_flagged_snps_vcf = run_filtering.flagged_snps
     
     ## Annotate with gnomad
     if(defined(GNOMAD_VCF) && defined(GNOMAD_VCF_INDEX)){
         call annotate_with_gnomad {
             input:
-            input_vcf=denovos_flagged_snps_vcf,
+            input_vcf=run_filtering.flagged_snps,
             gnomad_vcf=select_first([GNOMAD_VCF]),
             gnomad_vcf_index=select_first([GNOMAD_VCF_INDEX])
         }
     }
 
-    File denovos_flagged_snps_gnomad_vcf = select_first([annotate_with_gnomad.vcf, denovos_flagged_snps_vcf])
+    File denovos_flagged_snps_gnomad_vcf = select_first([annotate_with_gnomad.vcf])
     
     # Annotate with SnpEff
     if(defined(SNPEFF_DB) && defined(SNPEFF_DB_NAME)){
@@ -113,14 +97,13 @@ workflow vcfeval_denovos_wf {
 
     File denovos_flagged_snpeff_vcf = select_first([annotate_with_snpeff.snpeff_vcf, denovos_flagged_snps_gnomad_vcf])
 
-    ## Annotate SNPs with presence in ClinVar and some dbNSFP annotations
-    # NOTE: first filter variants to keep those with high/moderate impact or with predicted loss of function (speeds up DB matching a lot)
+    ## Annotate SNPs with clinvar and some dbNSFP annotations
     if (defined(CLINVAR_VCF) && defined(CLINVAR_VCF_INDEX) && defined(DBNSFP_DB) && defined(DBNSFP_DB_INDEX)){
         call subset_annotate_smallvars_with_db {
             input:
-            input_vcf=denovos_flagged_snpeff_vcf,
-            clinvar_vcf=select_first([CLINVAR_VCF]),
-            clinvar_vcf_index=select_first([CLINVAR_VCF_INDEX]),
+            input_vcf = denovos_flagged_snpeff_vcf,
+            clinvar_vcf = select_first([CLINVAR_VCF]),
+            clinvar_vcf_index = select_first([CLINVAR_VCF_INDEX]),
             dbnsfp_db = select_first([DBNSFP_DB]),
             dbnsfp_db_index = select_first([DBNSFP_DB_INDEX])
         }
@@ -128,21 +111,11 @@ workflow vcfeval_denovos_wf {
 
     File denovos_gnomad_snpeff_clinvar_dbnsfp_vcf = select_first([subset_annotate_smallvars_with_db.fav_vcf, denovos_flagged_snpeff_vcf])
 
-    ## Filter to rare denovos
-    if (KEEP_RARE){
-        call keep_rare_denovos {
-            input:
-            input_vcf=denovos_flagged_snps_gnomad_vcf
-        }
-    }
-
-    File denovos_flagged_snps_gnomad_rare_vcf = select_first([keep_rare_denovos.vcf, denovos_flagged_snps_gnomad_vcf])
-
     ## Effective denovo variant filtering using parent's BAMs to filter-out false-positives
     if (defined(FATHER_BAM) && defined(FATHER_BAM_INDEX) && defined(MOTHER_BAM) && defined(MOTHER_BAM_INDEX)){
         call validate_denovos {
             input:
-            input_vcf=denovos_flagged_snps_gnomad_rare_vcf,
+            input_vcf=denovos_flagged_snps_gnomad_vcf,
             mom_bam=select_first([MOTHER_BAM]),
             mom_bam_index=select_first([MOTHER_BAM_INDEX]),
             dad_bam=select_first([FATHER_BAM]),
@@ -151,16 +124,23 @@ workflow vcfeval_denovos_wf {
         }
     }
 
-    File validated_vcf = select_first([validate_denovos.vcf, denovos_flagged_snps_gnomad_rare_vcf])
+    File validated_vcf = select_first([validate_denovos.vcf, denovos_flagged_snps_gnomad_vcf])
+
+    ## Filter to rare denovos
+    if (KEEP_RARE){
+        call keep_rare_denovos {
+            input:
+            input_vcf=validated_vcf
+        }
+    }
+
+    File final_validated_rare_vcf = select_first([keep_rare_denovos.vcf, denovos_flagged_snps_gnomad_vcf])
+
 
     output {
-        File denovos_all = denovos_vcf                                                        # all denovos genome-wide
-        File denovos_subset = denovos_subset_vcf                                              # denovos in high-confidence regions
-        File denovos_flagged_snps = denovos_flagged_snps_vcf                                  # filtered denovo SNPs not called in both parents
-        File denovos_flagged_snps_rare = denovos_flagged_snps_gnomad_vcf                      # Denovos annotated with gnomad
-        File denovos_gnomad_snpeff_clinvar_dbnsfp = denovos_gnomad_snpeff_clinvar_dbnsfp_vcf  # Filtered VCF with just functionally annotated rare denovos
-        File denovos_flagged_snps_gnomad_rare = denovos_flagged_snps_gnomad_rare_vcf          # Filtered VCF with rare variants
-        File validated = validated_vcf                                                        # Validated final VCF, tagged with dnvval rare denovos
+        File denovos_gnomad_snpeff_clinvar_dbnsfp = denovos_gnomad_snpeff_clinvar_dbnsfp_vcf  # Filtered VCF with just annotated denovos (has both rare and common; unvalidated)
+        File validated = validated_vcf                                                        # Validated VCF, with tags for gnomad and dnvval
+        File final_validated_rare = final_validated_rare_vcf                                  # Filtered validated VCF with only rare variants
     }
 }
 
@@ -184,9 +164,9 @@ task run_vcfeval {
             # Normalize VCFs
             # Only keep PASS variants
             # Remove HOM REF variants and variants "missing" GT calls
-        zcat ~{child_vcf} | bcftools norm -m -any --threads ~{threadCount} | bcftools filter -e 'FILTER!="PASS"' | bcftools filter -e '(GT="0/0"| GT="0|0"| GT="./.")' | bcftools view -v snps -Oz -o child.filtered.vcf.gz
-        zcat ~{father_vcf} | bcftools norm -m -any --threads ~{threadCount} | bcftools filter -e 'FILTER!="PASS"' | bcftools filter -e '(GT="0/0"| GT="0|0"| GT="./.")' | bcftools view -v snps -Oz -o father.filtered.vcf.gz
-        zcat ~{mother_vcf} | bcftools norm -m -any --threads ~{threadCount} | bcftools filter -e 'FILTER!="PASS"' | bcftools filter -e '(GT="0/0"| GT="0|0"| GT="./.")' | bcftools view -v snps -Oz -o mother.filtered.vcf.gz
+        zcat ~{child_vcf} | bcftools norm -m -any --threads ~{threadCount} | bcftools filter -e 'FILTER!="PASS"' | bcftools filter -e '(GT="0/0"| GT="0|0"| GT="./.")' | bcftools filter -i '(STRLEN(REF)<30 && STRLEN(ALT)<30)' -Oz -o child.filtered.vcf.gz
+        zcat ~{father_vcf} | bcftools norm -m -any --threads ~{threadCount} | bcftools filter -e 'FILTER!="PASS"' | bcftools filter -e '(GT="0/0"| GT="0|0"| GT="./.")' | bcftools filter -i '(STRLEN(REF)<30 && STRLEN(ALT)<30)' -Oz -o father.filtered.vcf.gz
+        zcat ~{mother_vcf} | bcftools norm -m -any --threads ~{threadCount} | bcftools filter -e 'FILTER!="PASS"' | bcftools filter -e '(GT="0/0"| GT="0|0"| GT="./.")' | bcftools filter -i '(STRLEN(REF)<30 && STRLEN(ALT)<30)' -Oz -o mother.filtered.vcf.gz
 
         ## Generate index
         tabix -p vcf child.filtered.vcf.gz
@@ -209,7 +189,7 @@ task run_vcfeval {
         rtg vcfeval -T ~{threadCount} -b child_not_father/fn.vcf.gz -c child_not_mother/fn.vcf.gz -o denovos_out -t GRCh38.sdf  # true-positive variants -> present in child, but not in father and mother (denovos)
 
         ## Post-filtering of denovos by variant quality threshold
-        zcat denovos_out/tp.vcf.gz | bcftools filter -e 'QUAL<20' -Oz -o ~{family}.denovos.vcf.gz
+        zcat denovos_out/tp.vcf.gz | bcftools filter -e 'QUAL<0' -Oz -o ~{family}.denovos.vcf.gz
 
     >>>
 
@@ -225,40 +205,6 @@ task run_vcfeval {
         preemptible: 1
     }
 }
-
-
-task subset_denovos_by_region {
-    input {
-        File input_vcf
-        File lc_bed
-        Int memSizeGB = 48
-        Int threadCount = 16
-        Int diskSizeGB = round(5*(size(input_vcf, "GB") + size(lc_bed, "GB"))) + 20
-    }
-
-    String basen = sub(sub(basename(input_vcf), ".vcf.bgz$", ""), ".vcf.gz$", "")
-
-    command <<<
-        set -eux -o pipefail
-
-        ## Filter denovos inside low-complexity regions in GRCh38
-        bcftools view --threads ~{threadCount} -T ^~{lc_bed} -Oz -o ~{basen}.subset.vcf.gz ~{input_vcf}
-        
-    >>>
-
-    output {
-		File vcf = "~{basen}.subset.vcf.gz"
-	}
-
-    runtime {
-        memory: memSizeGB + " GB"
-        cpu: threadCount
-        disks: "local-disk " + diskSizeGB + " SSD"
-        docker: "quay.io/biocontainers/bcftools@sha256:f3a74a67de12dc22094e299fbb3bcd172eb81cc6d3e25f4b13762e8f9a9e80aa"
-        preemptible: 1
-    }
-}
-
 
 task run_filtering {
     input {
@@ -285,16 +231,16 @@ task run_filtering {
         ## For Males, don't filter homozygous variants in chrX and chrY.
         if [~{sex} = "Female"]
         then 
-            zcat input.vcf.gz | bcftools view --threads ~{threadCount} -i '((FORMAT/GQ>=20) & (FORMAT/DP>=20) & (FORMAT/GT!="1/1"))' | bcftools sort -Oz -o ~{basen}.filter.vcf.gz
+            zcat input.vcf.gz | bcftools view --threads ~{threadCount} -i '((FORMAT/GQ>=20) & (FORMAT/DP>=10) & (FORMAT/GT!="1/1"))' | bcftools sort -Oz -o ~{basen}.filter.vcf.gz
         else
             ## Sex-chromosomes : GQ>=20, DP>=10 and all GTs
             bcftools view input.vcf.gz --regions chrX,chrY -o sex_chrs.vcf.gz -Oz
-            zcat sex_chrs.vcf.gz | bcftools view -i '(FORMAT/GQ>=20) & (FORMAT/DP>=10)' - | bcftools sort -o sex_chrs.filtered.vcf.gz -Oz 
+            zcat sex_chrs.vcf.gz | bcftools view -i '((FORMAT/GQ>=20) & (FORMAT/DP>=5)) & (FORMAT/GT=="1/1")' - | bcftools sort -o sex_chrs.filtered.vcf.gz -Oz 
 
             ## Autosomes : GQ>=20, DP>=20 and all HETs
             autosomes=$(printf "chr%d," {1..22} | sed 's/,$//')
             bcftools view input.vcf.gz --regions $autosomes -o autosomes.vcf.gz -Oz
-            zcat autosomes.vcf.gz | bcftools view -i '(FORMAT/GQ>=20) & (FORMAT/DP>=20) & (FORMAT/GT!="1/1")' - | bcftools sort -o autosomes.filtered.vcf.gz -Oz 
+            zcat autosomes.vcf.gz | bcftools view -i '(FORMAT/GQ>=20) & (FORMAT/DP>=10) & (FORMAT/GT!="1/1")' - | bcftools sort -o autosomes.filtered.vcf.gz -Oz 
 
             ## Concatenate
             bcftools concat autosomes.filtered.vcf.gz sex_chrs.filtered.vcf.gz -Oz -o ~{basen}.filter.vcf.gz
@@ -322,6 +268,7 @@ task run_filtering {
     >>>
 
     output {
+		# File vcf = "~{basen}.filter.vcf.gz"   # just the sex-aware and FORMAT TAG filters applied
         File flagged_snps = "~{basen}.filter.flagged.snps.vcf.gz"   # After filtering using parent's VCF
 	}
 
@@ -358,6 +305,7 @@ task annotate_with_gnomad {
     ln -s ~{gnomad_vcf_index} gnomad.vcf.bgz.tbi
 
     ## annotate VCF with gnomad allele frequencies
+    # zcat input.vcf.gz | SnpSift -Xmx~{snpsiftMem}g annotate -noId -v gnomad.vcf.bgz | gzip > ~{basen}.gnomad.vcf.gz
     zcat input.vcf.gz | SnpSift -Xmx~{snpsiftMem}g annotate -noId -v gnomad.vcf.bgz > ~{basen}.gnomad.vcf
 
     >>>
@@ -394,7 +342,7 @@ task annotate_with_snpeff {
     
     unzip ~{snpeff_db}
     
-    cat ~{input_vcf} | snpEff -Xmx~{snpeffMem}g -nodownload -no-intergenic \
+    cat ~{input_vcf} | snpEff -Xmx~{snpeffMem}g -nodownload \
                                -dataDir "${PWD}/data" ~{db_name} | gzip > ~{basen}.snpeff.vcf.gz
     >>>
     
@@ -435,16 +383,13 @@ task subset_annotate_smallvars_with_db {
         ln -s ~{clinvar_vcf_index} clinvar.vcf.bgz.tbi
         ln -s ~{dbnsfp_db} dbnsfp.txt.gz
         ln -s ~{dbnsfp_db_index} dbnsfp.txt.gz.tbi
-
-        ## filter variants to keep those with high/moderate impact or with predicted loss of function
-        zcat ~{input_vcf} | SnpSift -Xmx1g filter "(ANN[*].IMPACT has 'HIGH') | (ANN[*].IMPACT has 'MODERATE') | ((exists LOF[*].PERC) & (LOF[*].PERC > 0.9))" | gzip > snps.vcf.gz
-
+        
         ## annotate IDs with clinvar IDs and add the CLNSIG INFO field
-        zcat snps.vcf.gz | SnpSift -Xmx~{snpsiftMem}g annotate -info CLNSIG -v clinvar.vcf.bgz | gzip > snps.clinvar.vcf.gz
-
+        zcat ~{input_vcf} | SnpSift -Xmx~{snpsiftMem}g annotate -info CLNSIG -v clinvar.vcf.bgz | gzip > snps.clinvar.vcf.gz
+        
         ## annotate IDs with dbNSFP prediction scores and conservation scores
         zcat snps.clinvar.vcf.gz > snps.clinvar.vcf
-        SnpSift -Xmx~{snpsiftMem}g dbnsfp -v -db dbnsfp.txt.gz -f GERP++_RS,CADD_raw,CADD_phred,MetaRNN_score,MetaRNN_pred,ALFA_Total_AF snps.clinvar.vcf > ~{basen}.clinvar.dbnsfp.vcf
+        SnpSift -Xmx~{snpsiftMem}g dbnsfp -v -db dbnsfp.txt.gz -f GERP++_RS,CADD_raw,CADD_phred snps.clinvar.vcf > ~{basen}.clinvar.dbnsfp.vcf
 
     >>>
 
@@ -460,37 +405,6 @@ task subset_annotate_smallvars_with_db {
         preemptible: 1
     }
 }
-
-
-task keep_rare_denovos {
-    input {
-        File input_vcf
-        Int threadCount = 16
-        Int memSizeGB = 32
-        Int diskSizeGB = 5*round(size(input_vcf, "GB")) + 20
-    }
-
-    String basen = sub(basename(input_vcf), ".vcf$", "")
-
-    command <<<
-        set -eux -o pipefail
-
-        cat ~{input_vcf} | bcftools view --threads ~{threadCount} -e 'INFO/AF>=0.001' | bcftools sort -o ~{basen}.rare.vcf.gz -Oz
-    >>>
-
-    output {
-        File vcf = "~{basen}.rare.vcf.gz"
-    }
-
-    runtime {
-        memory: memSizeGB + " GB"
-        cpu: threadCount
-        disks: "local-disk " + diskSizeGB + " SSD"
-        docker: "quay.io/biocontainers/bcftools@sha256:f3a74a67de12dc22094e299fbb3bcd172eb81cc6d3e25f4b13762e8f9a9e80aa"
-        preemptible: 1
-    }
-}
-
 
 task validate_denovos {
     input {
@@ -531,6 +445,35 @@ task validate_denovos {
         cpu: threadCount
         disks: "local-disk " + diskSizeGB + " SSD"
         docker: "quay.io/shnegi/dnvval@sha256:31f88e18df4067b9e1136daf1301b3eddaeb7770ec3baf18d47596d0a9d1ea8d"
+        preemptible: 1
+    }
+}
+
+task keep_rare_denovos {
+    input {
+        File input_vcf
+        Int threadCount = 16
+        Int memSizeGB = 32
+        Int diskSizeGB = 5*round(size(input_vcf, "GB")) + 20
+    }
+
+    String basen = sub(basename(input_vcf), ".vcf$", "")
+
+    command <<<
+        set -eux -o pipefail
+
+        cat ~{input_vcf} | bcftools view --threads ~{threadCount} -e 'INFO/AF>=0.001' | bcftools sort -o ~{basen}.rare.vcf.gz -Oz
+    >>>
+
+    output {
+        File vcf = "~{basen}.rare.vcf.gz"
+    }
+
+    runtime {
+        memory: memSizeGB + " GB"
+        cpu: threadCount
+        disks: "local-disk " + diskSizeGB + " SSD"
+        docker: "quay.io/biocontainers/bcftools@sha256:f3a74a67de12dc22094e299fbb3bcd172eb81cc6d3e25f4b13762e8f9a9e80aa"
         preemptible: 1
     }
 }

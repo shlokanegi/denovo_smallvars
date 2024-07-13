@@ -9,7 +9,6 @@
     "denovo_snps.FATHER_BAM": "test/mother_bam.bam", 
     "denovo_snps.FATHER_BAM_INDEX": "test/mother_bam.bam", 
     "denovo_snps.REF": "test/test_hg38.fasta", 
-    "denovo_snps.LOW_COMPLEXITY_BED": "test/test.low_complexity.bed.gz", 
     "denovo_snps.SNPEFF_DB": "test/snpEff_v5_1_GRCh38.105.zip", 
     "denovo_snps.SNPEFF_DB_NAME": "GRCh38.105", 
     "denovo_snps.CLINVAR_VCF": "test/test.clinvar.vcf.gz", 
@@ -18,5 +17,5 @@
     "denovo_snps.DBNSFP_DB_INDEX": "test/test.dbNSFP4.4a.small.txt.gz.tbi", 
     "denovo_snps.GNOMAD_VCF": "test/test.gnomadv4.vcf.gz", 
     "denovo_snps.GNOMAD_VCF_INDEX": "test/test.gnomadv4.vcf.gz.tbi", 
-    "denovo_snps.KEEP_RARE": false
+    "denovo_snps.KEEP_RARE": true
 }
