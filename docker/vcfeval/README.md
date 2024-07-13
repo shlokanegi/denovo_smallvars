@@ -1,10 +1,10 @@
 # vcfeval workflow
-Run RTG [vcfeval](https://github.com/RealTimeGenomics/rtg-tools) to compare short-read and long-read VCFs and output intersection, exclusive VCFs and summary stats. Workflow could also be used to compare any 2 VCFs. 
+Run RTG [vcfeval](https://github.com/RealTimeGenomics/rtg-tools) to compare compare any 2 VCFs and output intersection, exclusive VCFs and summary stats.
 
 ## Input considerations
-* Sample short read VCF. Gzipped
-* Sample long read VCF. Gzipped
-* Sample name
+* sample1.vcf Gzipped
+* sample2.vcf Gzipped
+* any unique name
 * Reference genome fasta
 
 ## Docker container

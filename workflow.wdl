@@ -1,6 +1,6 @@
 version 1.0
 
-workflow vcfeval_denovos_wf {
+workflow denovo_smallvars {
     meta {
 	    author: "Shloka Negi"
         email: "shnegi@ucsc.edu"
